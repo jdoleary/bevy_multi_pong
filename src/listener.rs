@@ -1,17 +1,17 @@
 use bevy::{prelude::*, render::pass::ClearColor, window::CursorMoved};
-use std::{mem::replace, net::UdpSocket};
+use std::{convert::TryInto, mem::replace, net::UdpSocket};
 
 #[macro_use]
 extern crate lazy_static;
 
 lazy_static! {
     static ref SENDER: UdpSocket =
-        UdpSocket::bind("127.0.0.1:34254").expect("couldn't bind to address");
+        UdpSocket::bind("127.0.0.1:8080").expect("couldn't bind to address");
 }
 fn main() {
-    SENDER
-        .connect("127.0.0.1:8080")
-        .expect("connect function failed");
+    // SENDER
+    //     .connect("127.0.0.1:34253")
+    //     .expect("connect function failed");
     App::build()
         .add_startup_system(setup.system())
         .add_plugins(DefaultPlugins)
@@ -54,24 +54,24 @@ fn networked_ball_movement_system(
     // get the primary window
     let wnd = wnds.get_primary().unwrap();
 
-    // check if the cursor is in the primary window
-    if let Some(pos) = wnd.cursor_position() {
-        // get the size of the window
-        let size = Vec2::new(wnd.width() as f32, wnd.height() as f32);
+    // Get message
+    let (x, y) = get_networked_message().unwrap();
+    println!("x:{:?}, y:{:?}", x, y);
 
-        // the default orthographic projection is in pixels from the center;
-        // just undo the translation
-        let p = pos - size / 2.0;
-
-        if let Ok((ball, mut transform)) = ball_query.single_mut() {
-            transform.translation.x = p.x;
-            transform.translation.y = p.y;
-            println!("x:{:?}, y:{:?}", p.x, p.y);
-            SENDER
-                .send(&[p.x.to_be_bytes(), p.y.to_be_bytes()].concat())
-                .expect("couldn't send message");
-        }
+    if let Ok((ball, mut transform)) = ball_query.single_mut() {
+        transform.translation.x = x;
+        transform.translation.y = y;
+        println!("x:{:?}, y:{:?}", x, y);
     }
+}
+fn get_networked_message() -> std::io::Result<(f32, f32)> {
+    let mut buf = [0; 8];
+    let (amt, src) = SENDER.recv_from(&mut buf)?;
+    let buf = &mut buf[..amt];
+    let x = f32::from_be_bytes(buf[0..4].try_into().unwrap());
+    let y = f32::from_be_bytes(buf[4..8].try_into().unwrap());
+    println!("1 x:{:?}, y:{:?}", x, y);
+    Ok((x, y))
 }
 fn ball_movement_system(
     time: Res<Time>,
