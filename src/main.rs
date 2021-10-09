@@ -39,10 +39,6 @@ fn setup(mut commands: Commands, mut materials: ResMut<Assets<ColorMaterial>>) {
         .insert(Ball {
             velocity: 400.0 * Vec3::new(0.5, -0.5, 0.0).normalize(),
         });
-
-    // setup listener
-
-    // setup sender
 }
 fn networked_ball_movement_system(
     mut ball_query: Query<(&Ball, &mut Transform)>,
