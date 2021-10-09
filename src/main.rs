@@ -1,25 +1,51 @@
-use bevy::{
-    // input::mouse::{MouseButtonInput, MouseMotion, MouseWheel},
-    prelude::*,
-    render::pass::ClearColor,
-    window::CursorMoved,
-};
+use bevy::{prelude::*, render::pass::ClearColor, window::CursorMoved};
+use std::{mem::replace, net::UdpSocket};
+
+#[macro_use]
+extern crate lazy_static;
+
+lazy_static! {
+    // static ref HASHMAP: HashMap<u32, &'static str> = {
+    //     let mut m = HashMap::new();
+    //     m.insert(0, "foo");
+    //     m.insert(1, "bar");
+    //     m.insert(2, "baz");
+    //     m
+    // };
+    // static ref COUNT: usize = 4;
+    // static ref NUMBER: u32 = times_two(21);
+    static ref SENDER: UdpSocket = UdpSocket::bind("127.0.0.1:34254").expect("couldn't bind to address");
+}
+struct Multi {
+    sender: Option<UdpSocket>,
+    reciever: Option<UdpSocket>,
+}
+impl Multi {
+    fn take_sender(&mut self) -> UdpSocket {
+        let s = replace(&mut self.sender, None);
+        s.unwrap()
+    }
+    fn take_reciever(&mut self) -> UdpSocket {
+        let s = replace(&mut self.reciever, None);
+        s.unwrap()
+    }
+}
 fn main() {
+    SENDER
+        .connect("127.0.0.1:8080")
+        .expect("connect function failed");
     App::build()
         .add_startup_system(setup.system())
         .add_plugins(DefaultPlugins)
         .insert_resource(ClearColor(Color::rgb(0.9, 0.9, 0.9)))
         .add_system(ball_movement_system.system())
+        .add_system(networked_ball_movement_system.system())
         .run();
 }
 struct Ball {
     velocity: Vec3,
 }
-fn setup(
-    mut commands: Commands,
-    mut materials: ResMut<Assets<ColorMaterial>>,
-    asset_server: Res<AssetServer>,
-) {
+fn setup(mut commands: Commands, mut materials: ResMut<Assets<ColorMaterial>>) {
     // Add the game's entities to our world
 
     // cameras
@@ -36,27 +62,17 @@ fn setup(
         .insert(Ball {
             velocity: 400.0 * Vec3::new(0.5, -0.5, 0.0).normalize(),
         });
+
+    // setup listener
+
+    // setup sender
 }
-fn ball_movement_system(
+fn networked_ball_movement_system(
     time: Res<Time>,
     mut cursor_moved_events: EventReader<CursorMoved>,
     mut ball_query: Query<(&Ball, &mut Transform)>,
-    // need to get window dimensions
     wnds: Res<Windows>,
-    // query to get camera transform
-    // q_camera: Query<&Transform, With<MainCamera>>,
 ) {
-    // clamp the timestep to stop the ball from escaping when the game starts
-    let delta_seconds = f32::min(0.2, time.delta_seconds());
-
-    // for event in cursor_moved_events.iter() {
-    //     println!("{:?}", event);
-    //     if let Ok((ball, mut transform)) = ball_query.single_mut() {
-    //         transform.translation.x = event.position.x;
-    //         transform.translation.y = event.position.y;
-    //     }
-    // }
-
     // get the primary window
     let wnd = wnds.get_primary().unwrap();
 
@@ -69,12 +85,34 @@ fn ball_movement_system(
         // just undo the translation
         let p = pos - size / 2.0;
 
-        // // assuming there is exactly one main camera entity, so this is OK
-        // let camera_transform = q_camera.single().unwrap();
+        if let Ok((ball, mut transform)) = ball_query.single_mut() {
+            transform.translation.x = p.x;
+            transform.translation.y = p.y;
+            println!("x:{:?}, y:{:?}", p.x, p.y);
+            SENDER
+                .send(&[p.x.to_be_bytes(), p.y.to_be_bytes()].concat())
+                .expect("couldn't send message");
+        }
+    }
+}
+fn ball_movement_system(
+    time: Res<Time>,
+    mut cursor_moved_events: EventReader<CursorMoved>,
+    mut ball_query: Query<(&Ball, &mut Transform)>,
+    wnds: Res<Windows>,
+) {
+    // get the primary window
+    let wnd = wnds.get_primary().unwrap();
 
-        // // apply the camera transform
-        // let pos_wld = camera_transform.compute_matrix() * p.extend(0.0).extend(1.0);
-        eprintln!("World coords: {:?}", p);
+    // check if the cursor is in the primary window
+    if let Some(pos) = wnd.cursor_position() {
+        // get the size of the window
+        let size = Vec2::new(wnd.width() as f32, wnd.height() as f32);
+
+        // the default orthographic projection is in pixels from the center;
+        // just undo the translation
+        let p = pos - size / 2.0;
+
         if let Ok((ball, mut transform)) = ball_query.single_mut() {
             transform.translation.x = p.x;
             transform.translation.y = p.y;
